@@ -1,7 +1,7 @@
 # Recommend-It
-# Recommend-It
 
-A content-based movie recommendation engine. Give it a movie you like, and it returns titles with similar genres, cast, director, and plot themes — ranked by cosine similarity over TF-IDF vectors.
+
+A content-based movie recommendation engine. Give it a movie you like, and it returns titles with similar genres, cast, director, and plot themes, ranked by cosine similarity over TF-IDF vectors.
 
 ## How it works
 
