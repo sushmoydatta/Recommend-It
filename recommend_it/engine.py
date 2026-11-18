@@ -26,7 +26,7 @@ from scipy import sparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 
-FEATURE_VERSION = "3"
+FEATURE_VERSION = "5"
 TOKEN_FIELDS = {
     "genres": ("g", 3),
     "director": ("p", 2),
@@ -36,6 +36,14 @@ TOKEN_FIELDS = {
     "cast_ids": ("p", 1),
     "subject_ids": ("s", 2),
 }
+# Field groups and their weight in the final similarity.
+BLOCKS = {
+    "genres": ["genres"],
+    "director": ["director", "director_ids"],
+    "cast": ["cast", "cast_ids"],
+    "subjects": ["subject_ids"],
+}
+BLOCK_WEIGHTS = {"genres": 1.0, "director": 1.0, "cast": 1.2, "subjects": 0.6, "text": 1.2}
 # If an ID column exists, the name column is display-only (avoid double counting).
 SUPERSEDED_BY = {"director": "director_ids", "cast": "cast_ids"}
 TEXT_FIELDS = {"keywords": 2, "overview": 1, "tagline": 1}
@@ -46,7 +54,9 @@ _YEAR_RE = re.compile(r"^(.*?)\s*\((\d{4})\)\s*$")
 
 
 def normalize(title: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", str(title).lower())).strip()
+    """Lowercase, drop punctuation and a leading article ("The Godfather" == "godfather")."""
+    t = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", str(title).lower())).strip()
+    return re.sub(r"^(the|a|an) ", "", t)
 
 
 def _split(value: str) -> list[str]:
@@ -118,20 +128,26 @@ class MovieRecommender:
         df["title"] = df["title"].astype(str)
         return df
 
-    def _documents(self) -> list[str]:
-        cols = {}
-        for col, (prefix, weight) in TOKEN_FIELDS.items():
+    def _blocks(self) -> dict[str, list[str]]:
+        """One token document per field group, so each group can be weighted on its own."""
+        token_cols: dict[str, pd.Series] = {}
+        for col, (prefix, _) in TOKEN_FIELDS.items():
             if SUPERSEDED_BY.get(col) in self._source_columns:
                 continue
             # The old TMDB-5000 CSV separates genres and cast with plain spaces, so
             # names can't be recovered there; fall back to single words. A director
             # field without separators is always one name.
             as_names = col == "director" or self.movies[col].str.contains(r"[|,]", regex=True).any()
-            toks = self.movies[col].map(lambda v, p=prefix, a=as_names: _tokens(v, p, a))
-            cols[col] = (toks + " ") * weight
-        for col, weight in TEXT_FIELDS.items():
-            cols[col] = (self.movies[col] + " ") * weight
-        return pd.DataFrame(cols).agg(" ".join, axis=1).tolist()
+            token_cols[col] = self.movies[col].map(lambda v, p=prefix, a=as_names: _tokens(v, p, a))
+        blocks = {}
+        for block, cols in BLOCKS.items():
+            present = [token_cols[c] for c in cols if c in token_cols]
+            if present:
+                blocks[block] = pd.concat(present, axis=1).agg(" ".join, axis=1).tolist()
+        text = self.movies[list(TEXT_FIELDS)].agg(" ".join, axis=1)
+        if text.str.strip().astype(bool).any():
+            blocks["text"] = text.tolist()
+        return blocks
 
     def _vectors(self, use_cache: bool) -> sparse.csr_matrix:
         stat = self.path.stat()
@@ -139,8 +155,25 @@ class MovieRecommender:
         cache = self.path.parent / ".cache" / f"{self.path.name}.{key}.npz"
         if use_cache and cache.exists():
             return sparse.load_npz(cache).tocsr()
-        vec = TfidfVectorizer(stop_words="english", sublinear_tf=True, min_df=1, dtype=np.float32)
-        X = vec.fit_transform(self._documents()).tocsr()
+        # Each field group gets its own TF-IDF, normalised, then scaled by sqrt(weight).
+        # The cosine of the stacked vectors is then a weighted average of per-group
+        # similarities, so e.g. a long list of rare genre tags can't drown out a
+        # shared director or cast.
+        parts, total = [], 0.0
+        for block, docs in self._blocks().items():
+            if block == "text":
+                vec = TfidfVectorizer(stop_words="english", sublinear_tf=True, dtype=np.float32)
+            else:
+                vec = TfidfVectorizer(analyzer=str.split, sublinear_tf=True, dtype=np.float32)
+            try:
+                Xb = vec.fit_transform(docs)
+            except ValueError:  # empty vocabulary
+                continue
+            parts.append(Xb * np.float32(np.sqrt(BLOCK_WEIGHTS[block])))
+            total += BLOCK_WEIGHTS[block]
+        # Divide by the total weight of all groups (not each film's own): a film
+        # with only a director listed can't score high just by sharing that one field.
+        X = (sparse.hstack(parts).tocsr() / np.float32(np.sqrt(total))).astype(np.float32)
         if use_cache:
             try:
                 cache.parent.mkdir(exist_ok=True)
@@ -243,13 +276,13 @@ class MovieRecommender:
             pd.to_numeric(self.movies["year"], errors="coerce").eq(year) if year and "year" in self.movies else True
         )
 
-        exact = titles.index[(titles == q) & year_ok]
-        if len(exact):
-            return self._by_popularity(exact)
-
+        # Exact title matches first, then titles containing the query as whole words.
+        exact = self._by_popularity(titles.index[(titles == q) & year_ok])
         words = titles.index[titles.str.contains(rf"\b{re.escape(q)}\b", regex=True) & year_ok]
-        if len(words):
-            return self._by_popularity(words)
+        seen = set(exact)
+        hits = exact + [p for p in self._by_popularity(words) if p not in seen]
+        if hits:
+            return hits
 
         # Typo-tolerant fallback. Only compare against titles with the same first
         # letter and a similar length, which keeps this fast on 300k+ titles.

@@ -37,8 +37,44 @@ import pandas as pd
 
 ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "Recommend-It/2.0 (https://github.com/sushmoydatta/Recommend-It) dataset builder"
-# film, feature film, animated feature film, documentary film, silent film, 3D film
-FILM_TYPES = ["Q11424", "Q24869", "Q202866", "Q93204", "Q226730", "Q29168811"]
+# Film types to include. Wikidata types many films with a subtype instead of
+# plain "film" (e.g. Spirited Away is an "anime film"). Short films, TV films,
+# music videos and unreleased "film projects" are deliberately left out.
+FILM_TYPES = [
+    "Q11424",  # film
+    "Q24869",  # feature film
+    "Q202866",  # animated film
+    "Q29168811",  # animated feature film
+    "Q20650540",  # anime film
+    "Q28968258",  # computer-animated film
+    "Q18089587",  # stop-motion animated film
+    "Q25110269",  # live-action/animated film
+    "Q4765076",  # animated documentary
+    "Q93204",  # documentary film
+    "Q1760864",  # nature documentary
+    "Q110593123",  # music documentary film
+    "Q459435",  # mockumentary
+    "Q226730",  # silent film
+    "Q10282327",  # black-and-white film
+    "Q1268687",  # lost film
+    "Q336144",  # anthology film
+    "Q130232",  # drama film
+    "Q157443",  # comedy film
+    "Q1054574",  # romance film
+    "Q2484376",  # thriller film
+    "Q645928",  # biographical film
+    "Q842256",  # musical film
+    "Q430525",  # concert film
+    "Q790192",  # experimental film
+    "Q12912091",  # fiction film
+    "Q20442589",  # LGBTQ-related film
+    "Q104840802",  # film remake
+    "Q120243801",  # direct-to-video film
+    "Q2523020",  # videofilm
+    "Q1060398",  # 4D film
+    "Q127402430",  # film in two parts
+    "Q29226975",  # film performance
+]
 BATCH = 2000
 LABEL_BATCH = 5000
 

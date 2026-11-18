@@ -4,8 +4,8 @@ emoji: 🎬
 colorFrom: yellow
 colorTo: red
 sdk: gradio
-sdk_version: 5.9.1
-python_version: "3.11"
+sdk_version: 6.32.0
+python_version: "3.12"
 app_file: app.py
 pinned: false
 short_description: Find films like the ones you love, and where to watch them free.
