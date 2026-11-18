@@ -219,3 +219,22 @@ def test_cli_search(csv_path, capsys):
     assert main(["search", "dark knight", "--data", str(csv_path)]) == 0
     out = capsys.readouterr().out
     assert out.index("The Dark Knight (2008)") < out.index("The Dark Knight Rises")
+
+
+def test_leading_article_ignored(engine):
+    assert engine.resolve("dark knight")[0].title == "The Dark Knight"
+    assert engine.resolve("Kid")[0].title == "The Kid"
+
+
+def test_sparse_films_do_not_dominate(tmp_path):
+    # "Short" shares only the director with "Feature"; "Sibling" shares director, genres and cast.
+    df = pd.DataFrame({
+        "title": ["Feature", "Sibling", "Short"],
+        "genres": ["Drama|Thriller", "Drama|Thriller", ""],
+        "director": ["Bong Joon-ho", "Bong Joon-ho", "Bong Joon-ho"],
+        "cast": ["Song Kang-ho|Choi Woo-shik", "Song Kang-ho", ""],
+    })
+    p = tmp_path / "m.csv"
+    df.to_csv(p, index=False)
+    _, recs = MovieRecommender(p, use_cache=False).recommend("Feature", top_n=2)
+    assert [r.title for r in recs] == ["Sibling", "Short"]
