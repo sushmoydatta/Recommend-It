@@ -18,6 +18,7 @@ licence, and they often carry malware and scam ads.
 from __future__ import annotations
 
 import os
+import re
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -89,24 +90,53 @@ def tmdb_offers(tmdb: TMDB, tmdb_id: int, region: str) -> tuple[list[Offer], str
     return offers, link
 
 
+_NOISE = re.compile(
+    r"\b(1080p|720p|480p|4k|60fps|hd|blu-?ray|restored|remastered|colou?ri[sz]ed|full movie|public domain)\b", re.I
+)
+
+
+def _clean_title(t: str) -> tuple[str, int | None]:
+    """'Night Of The Living Dead 720p 1968' -> ('night of the living dead', 1968)."""
+    t = str(t)
+    years = re.findall(r"\b(18[89]\d|19\d\d|20\d\d)\b", t)
+    t = re.sub(r"[\(\[].*?[\)\]]", " ", t)
+    t = _NOISE.sub(" ", t)
+    t = re.sub(r"\b(18[89]\d|19\d\d|20\d\d)\b", " ", t)
+    t = re.sub(r"[^\w\s]", " ", t.lower())
+    return re.sub(r"\s+", " ", t).strip(), int(years[-1]) if years else None
+
+
+def _doc_year(doc: dict, title_year: int | None) -> int | None:
+    for v in (doc.get("year"), str(doc.get("date") or "")[:4], title_year):
+        if v is not None and str(v)[:4].isdigit():
+            return int(str(v)[:4])
+    return None
+
+
 def archive_offers(title: str, year: int | None, timeout: float = 10) -> list[Offer]:
-    """Public-domain copies in the Internet Archive's curated Feature Films collection."""
+    """Public-domain copies in the Internet Archive's curated Feature Films collection.
+
+    The archive's title search is fuzzy ("The Kid" also hits "Billy the Kid"), so
+    results are kept only if the cleaned title matches exactly and, when we know
+    the film's year, the item's year is within one year of it.
+    """
+    want, _ = _clean_title(title)
     q = f'title:("{title.replace(chr(34), "")}") AND mediatype:(movies) AND collection:(feature_films)'
     data = get_json(
         "https://archive.org/advancedsearch.php",
-        params={"q": q, "fl[]": ["identifier", "title", "year"], "rows": 10, "output": "json"},
+        params={"q": q, "fl[]": ["identifier", "title", "year", "date"], "sort[]": "downloads desc",
+                "rows": 50, "output": "json"},
         timeout=timeout,
     )
-    offers = []
     for doc in data.get("response", {}).get("docs", []):
-        y = str(doc.get("year") or "")[:4]
-        if year and y.isdigit() and abs(int(y) - year) > 1:
+        got, title_year = _clean_title(doc.get("title", ""))
+        if got != want:
             continue
-        if year and not y.isdigit():
+        y = _doc_year(doc, title_year)
+        if year and (y is None or abs(y - year) > 1):
             continue
-        offers.append(Offer("Internet Archive (public domain)", "free", f"https://archive.org/details/{doc['identifier']}"))
-        break
-    return offers
+        return [Offer("Internet Archive (public domain)", "free", f"https://archive.org/details/{doc['identifier']}")]
+    return []
 
 
 def search_links(title: str, year: int | None, region: str) -> list[tuple[str, str]]:
@@ -140,7 +170,7 @@ def where_to_watch(
         except HTTPError as e:
             info.notes.append(f"TMDB lookup failed: {e}")
     else:
-        info.notes.append("Set TMDB_API_KEY for exact availability per service (free key: themoviedb.org).")
+        info.notes.append("Set TMDB_API_KEY (or TMDB_READ_TOKEN) for exact availability per service (free key: themoviedb.org).")
 
     if check_archive:
         try:

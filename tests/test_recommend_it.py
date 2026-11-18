@@ -185,10 +185,16 @@ def test_where_to_watch_without_key_gives_search_links(monkeypatch):
 
 
 def test_archive_year_filter(monkeypatch):
-    docs = {"response": {"docs": [{"identifier": "wrong", "year": "1960"}, {"identifier": "TheKid1921", "year": "1921"}]}}
+    docs = {"response": {"docs": [
+        {"identifier": "billy", "title": "Billy The Kid 1930"},
+        {"identifier": "wrong-year", "title": "The Kid", "year": "1960"},
+        {"identifier": "no-year", "title": "The Kid"},
+        {"identifier": "TheKid1921", "title": "The Kid (1921) [Restored, 1080p]"},
+    ]}}
     monkeypatch.setattr(watch, "get_json", lambda *a, **k: docs)
     offers = watch.archive_offers("The Kid", 1921)
     assert offers[0].url == "https://archive.org/details/TheKid1921" and offers[0].is_free
+    assert watch.archive_offers("Billy the Kid", 1941) == []
 
 
 # ---------------------------------------------------------------- CLI
