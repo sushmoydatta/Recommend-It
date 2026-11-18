@@ -30,6 +30,12 @@ STATIC = Path(__file__).parent / "static"
 DATA = Path(os.environ.get("RECOMMEND_IT_DATA", "data/movies.csv.gz"))
 DATA_URL = os.environ.get("RECOMMEND_IT_DATA_URL")
 RATE = int(os.environ.get("RATE_LIMIT_PER_MIN", "90"))
+# Portfolio info shown on the site (set these on your host, nothing personal is hard-coded).
+SITE = {
+    "author": os.environ.get("SITE_AUTHOR", ""),
+    "author_url": os.environ.get("SITE_AUTHOR_URL", ""),  # portfolio / LinkedIn
+    "github_url": os.environ.get("SITE_GITHUB_URL", "https://github.com/sushmoydatta/Recommend-It"),
+}
 WATCH_TTL = 12 * 3600
 IMG = "https://image.tmdb.org/t/p/w342"
 
@@ -121,6 +127,11 @@ def _pos(key: str) -> int:
         return _engine().position_of(key)
     except KeyError:
         raise HTTPException(404, "Unknown film id.") from None
+
+
+@app.get("/api/site")
+def site():
+    return {**SITE, "films": S.engine.size if S.engine else 0, "tmdb": S.tmdb is not None}
 
 
 @app.get("/api/health")

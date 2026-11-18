@@ -11,6 +11,7 @@
 <body>
   <header class="top">
     <a class="brand" href="/">🎬 Recommend-It</a>
+    <nav class="nav"><button type="button" class="link" id="about-open">About this project</button></nav>
     <label class="region">
       <span>Watching from</span>
       <select id="region" aria-label="Your country"></select>
@@ -41,13 +42,30 @@
     </section>
   </main>
 
+  <dialog id="about" aria-labelledby="about-title">
+    <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
+    <h2 id="about-title">About this project</h2>
+    <p>Recommend-It is a content-based film recommender with a legal "where to watch" lookup. Pick a film you like and it finds others that share its genres, directors, cast and subjects, then shows where each one streams in your country, with free options first.</p>
+    <h3>How it works</h3>
+    <ul>
+      <li><strong>Data:</strong> <span id="about-films">300,000+</span> films from Wikidata (CC0), rebuilt weekly by a GitHub Actions job through batched, rate-limit-aware SPARQL queries.</li>
+      <li><strong>Model:</strong> every film becomes weighted tokens: genres, plus people and subjects as Wikidata IDs, so two actors with the same name never get mixed up. These are vectorised with TF-IDF and cached on disk.</li>
+      <li><strong>Ranking:</strong> cosine similarity is computed for just the selected film (one sparse row, about 50 ms over 300k films), then blended with a popularity prior.</li>
+      <li><strong>Search:</strong> exact, then word-prefix, then typo-tolerant fuzzy matching. Ties go to the more popular film.</li>
+      <li><strong>Where to watch:</strong> TMDB / JustWatch availability per country, plus public-domain films on the Internet Archive. Pirate sites are never linked.</li>
+    </ul>
+    <h3>Tech stack</h3>
+    <p class="chips"><span>Python</span><span>pandas</span><span>scikit-learn</span><span>FastAPI</span><span>Vanilla JS</span><span>Docker</span><span>GitHub Actions</span><span>Wikidata SPARQL</span><span>TMDB API</span></p>
+    <p class="about-links"><a id="about-github" href="https://github.com/sushmoydatta/Recommend-It" target="_blank" rel="noopener">Source code on GitHub</a> · <a href="/api/docs" target="_blank">API docs</a><span id="about-author"></span></p>
+  </dialog>
+
   <footer>
     <p><strong>Only legal sources.</strong> Recommend-It links to licensed services and public-domain films. It never links to pirate sites.</p>
     <p>Film data: <a href="https://www.wikidata.org" rel="noopener">Wikidata</a> (CC0).
       Streaming availability: <a href="https://www.justwatch.com" rel="noopener">JustWatch</a> via
       <a href="https://www.themoviedb.org" rel="noopener">TMDB</a>. This product uses the TMDB API but is not endorsed or certified by TMDB.
       Public-domain films: <a href="https://archive.org/details/feature_films" rel="noopener">Internet Archive</a>.</p>
-    <p><a href="https://github.com/sushmoydatta/Recommend-It" rel="noopener">Source code</a> · <a href="/api/docs">API</a></p>
+    <p><span id="built-by"></span><a id="footer-github" href="https://github.com/sushmoydatta/Recommend-It" rel="noopener">Source code</a> · <a href="/api/docs">API</a></p>
   </footer>
   <script src="/static/app.js" defer></script>
 </body>

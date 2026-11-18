@@ -269,6 +269,20 @@ $("#search-form").addEventListener("submit", (e) => {
 });
 $("#free-only").addEventListener("change", applyFreeOnly);
 
+// ---------------------------------------------------------------- about / portfolio
+const about = $("#about");
+$("#about-open").addEventListener("click", () => about.showModal());
+about.addEventListener("click", (e) => { if (e.target === about) about.close(); });
+api("/api/site").then((s) => {
+  if (s.films) $("#about-films").textContent = `${s.films.toLocaleString()}`;
+  if (s.github_url) { $("#about-github").href = s.github_url; $("#footer-github").href = s.github_url; }
+  if (s.author) {
+    const who = s.author_url ? el("a", { href: s.author_url, target: "_blank", rel: "noopener" }, s.author) : s.author;
+    $("#built-by").append("Built by ", who, " · ");
+    $("#about-author").append(" · Built by ", typeof who === "string" ? who : who.cloneNode(true));
+  }
+}).catch(() => { /* optional */ });
+
 // ---------------------------------------------------------------- boot
 initRegion();
 $("#examples").append("Try:", ...EXAMPLES.map((t) => el("button", { class: "chip", type: "button", onclick: () => go(null, t) }, t)));

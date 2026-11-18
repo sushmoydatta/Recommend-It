@@ -65,6 +65,31 @@ The `Dockerfile` also works on Render, Fly.io, Railway or Google Cloud Run. Set 
 | `RECOMMEND_IT_DATA_URL` | the GitHub `dataset` release | Downloaded at startup or build time if the file is missing |
 | `TMDB_READ_TOKEN` / `TMDB_API_KEY` | none | Posters, plots, exact streaming availability |
 | `RATE_LIMIT_PER_MIN` | `90` | API requests per minute per IP |
+| `SITE_AUTHOR` | none | Your name, shown as "Built by …" |
+| `SITE_AUTHOR_URL` | none | Your portfolio or LinkedIn URL |
+| `SITE_GITHUB_URL` | this repo | Source-code link on the site |
+
+## For reviewers
+
+**Live demo:** _add your Hugging Face Space link here_ · **Stack:** Python, pandas, scikit-learn, FastAPI, vanilla JS, Docker, GitHub Actions
+
+What's worth looking at:
+
+- **Data engineering:** [`wikidata.py`](recommend_it/wikidata.py) pulls 300k+ films through batched SPARQL queries. It respects rate limits, sets hard request deadlines, and checkpoints batches so an interrupted build resumes. [`dataset.py`](recommend_it/dataset.py) streams IMDb's multi-GB dumps in chunks.
+- **Recommendation engine:** [`engine.py`](recommend_it/engine.py) builds weighted TF-IDF over genres, people and subjects. It computes similarity for one film on demand (about 50 ms over 300k films, low memory), blends in a popularity prior, and matches titles exact → prefix → fuzzy.
+- **Product:** [`web/`](recommend_it/web) is a FastAPI API with rate limiting, caching and security headers, plus a dependency-free frontend: search-as-you-type, shareable links, dark mode and a mobile layout.
+- **Responsible design:** licence-aware data sources, legal-only streaming links, and correct attribution.
+- **Quality:** pytest suite with fixture and mocked-network tests, CI on every push, and a reproducible Docker image.
+
+```mermaid
+flowchart LR
+  WD[Wikidata SPARQL] -->|weekly GitHub Action| DS[(films.csv.gz release)]
+  DS --> ENG[TF-IDF engine]
+  ENG --> API[FastAPI]
+  TMDB[TMDB / JustWatch] --> API
+  IA[Internet Archive] --> API
+  API --> UI[Web UI]
+```
 
 ## Quick start
 
