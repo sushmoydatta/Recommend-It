@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recommend-it"
+version = "2.0.0"
+description = "Content-based movie recommendations over the full IMDb catalogue, with legal where-to-watch lookup"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["pandas>=2.0.0", "scikit-learn>=1.3.0", "numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "httpx"]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+
+[project.scripts]
+recommend-it = "recommend_it.cli:main"
+
+[tool.setuptools]
+packages = ["recommend_it", "recommend_it.web"]
+
+[tool.setuptools.package-data]
+"recommend_it.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
