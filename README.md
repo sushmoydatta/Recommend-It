@@ -3,8 +3,10 @@ title: Recommend-It
 emoji: 🎬
 colorFrom: yellow
 colorTo: red
-sdk: docker
-app_port: 7860
+sdk: gradio
+sdk_version: 5.9.1
+python_version: "3.11"
+app_file: app.py
 pinned: false
 short_description: Find films like the ones you love, and where to watch them free.
 ---
@@ -44,10 +46,12 @@ IMDb's datasets are licensed for personal, non-commercial use only, so they can'
 
 ### Deploy to Hugging Face Spaces (free, recommended)
 
+Use the **Gradio** SDK; Docker Spaces may require a paid plan. `app.py` serves the FastAPI site directly, so no Gradio UI is involved.
+
 The app needs about 0.5–1 GB of RAM, more than most free tiers (Render's free tier has 512 MB). Hugging Face's free CPU Spaces have 16 GB.
 
 1. Publish the dataset once: **Actions → dataset → Run workflow** (takes about an hour). This creates the `dataset` release.
-2. Create a Space at huggingface.co/new-space with **SDK: Docker**, blank template.
+2. Create a Space at huggingface.co/new-space with **SDK: Gradio** (Blank template).
 3. Push this repository to it:
    ```bash
    git remote add space https://huggingface.co/spaces/<your-user>/recommend-it
