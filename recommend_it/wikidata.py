@@ -26,6 +26,7 @@ import io
 import json
 import sys
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,15 +47,40 @@ def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
-def sparql(query: str, retries: int = 6, timeout: float = 120) -> list[dict]:
+def _fetch(req: urllib.request.Request, timeout: float) -> str:
+    """urlopen with a hard wall-clock deadline.
+
+    A proxied connection can stall without tripping the socket timeout. Each
+    request runs in its own daemon thread, so a stalled one is simply abandoned
+    and can't block later requests.
+    """
+    box: dict = {}
+
+    def run():
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                box["text"] = resp.read().decode("utf-8")
+        except BaseException as e:  # re-raised in the caller
+            box["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout + 15)
+    if t.is_alive():
+        raise TimeoutError("no response from Wikidata")
+    if "error" in box:
+        raise box["error"]
+    return box["text"]
+
+
+def sparql(query: str, retries: int = 6, timeout: float = 90) -> list[dict]:
     """Run a query and return rows as dicts. Retries on rate limits and timeouts."""
     body = urllib.parse.urlencode({"query": query}).encode()
     for attempt in range(retries):
         req = urllib.request.Request(ENDPOINT, data=body, headers={"Accept": "text/csv", "User-Agent": USER_AGENT})
         started = time.time()
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                text = resp.read().decode("utf-8")
+            text = _fetch(req, timeout)
             # Wikidata allows ~60s of query time per minute per client: pause after
             # slow queries so the next one isn't throttled with a long Retry-After.
             spent = time.time() - started
@@ -69,7 +95,7 @@ def sparql(query: str, retries: int = 6, timeout: float = 120) -> list[dict]:
                 raise
             wait = int(e.headers.get("Retry-After") or 0) or 15 * (attempt + 1)
         except (TimeoutError, urllib.error.URLError, ConnectionError, http.client.HTTPException, OSError) as e:
-            if isinstance(e, TimeoutError) and attempt >= 1:
+            if isinstance(e, TimeoutError) and "server-side" in str(e) and attempt >= 1:
                 raise
             wait = 15 * (attempt + 1)
         _log(f"  Wikidata busy, retrying in {wait}s ...")
@@ -91,18 +117,20 @@ def film_ids() -> list[str]:
     return sorted(ids, key=lambda q: int(q[1:]))
 
 
-# One row per (film, property, value). Avoids the cross product that GROUP_CONCAT
-# over several multi-valued properties causes (a film with 60 cast members and 5
-# genres would otherwise expand to 300+ rows before grouping).
-DETAILS = """SELECT ?film ?p ?v WHERE {
- VALUES ?film { %s }
- { ?film wikibase:sitelinks ?v BIND("links" AS ?p) }
- UNION { ?film rdfs:label ?v FILTER(LANG(?v) = "en" || LANG(?v) = "mul") BIND(CONCAT("label_", LANG(?v)) AS ?p) }
- UNION { VALUES (?prop ?p) { (wdt:P577 "date") (wdt:P1476 "otitle") (wdt:P345 "imdb") (wdt:P4947 "tmdb")
-                            (wdt:P2047 "runtime") (wdt:P136 "genre") (wdt:P57 "director") (wdt:P161 "cast")
-                            (wdt:P921 "subject") }
-         ?film ?prop ?v }
-}"""
+# One row per (film, property, value), from three simple index lookups per batch.
+# This avoids the cross product that GROUP_CONCAT over several multi-valued
+# properties causes, and the slow plans the query service picks for a single
+# UNION of all three.
+DETAILS = [
+    'SELECT ?film ?p ?v WHERE { VALUES ?film { %s } ?film wikibase:sitelinks ?v BIND("links" AS ?p) }',
+    'SELECT ?film ?p ?v WHERE { VALUES ?film { %s } ?film rdfs:label ?v '
+    'FILTER(LANG(?v) = "en" || LANG(?v) = "mul") BIND(CONCAT("label_", LANG(?v)) AS ?p) }',
+    """SELECT ?film ?p ?v WHERE { VALUES ?film { %s }
+ VALUES (?prop ?p) { (wdt:P577 "date") (wdt:P1476 "otitle") (wdt:P345 "imdb") (wdt:P4947 "tmdb")
+                     (wdt:P2047 "runtime") (wdt:P136 "genre") (wdt:P57 "director") (wdt:P161 "cast")
+                     (wdt:P921 "subject") }
+ ?film ?prop ?v }""",
+]
 MULTI = {"genre": "genres", "director": "directors", "cast": "cast", "subject": "subjects"}
 
 
@@ -137,7 +165,8 @@ def _group(rows: list[dict]) -> list[dict]:
 
 def _details(ids: list[str]) -> list[dict]:
     try:
-        return _group(sparql(DETAILS % " ".join(f"wd:{q}" for q in ids)))
+        values = " ".join(f"wd:{q}" for q in ids)
+        return _group([row for query in DETAILS for row in sparql(query % values)])
     except (TimeoutError, RuntimeError):
         if len(ids) <= 100:
             raise
