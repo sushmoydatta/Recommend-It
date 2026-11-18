@@ -119,6 +119,12 @@ def cmd_search(args) -> int:
 
 
 def cmd_build(args) -> int:
+    if args.source == "wikidata":
+        from .wikidata import build as build_wikidata
+
+        build_wikidata(out=Path(args.out), raw_dir=Path(args.raw_dir) / "wikidata", refresh=args.refresh)
+        return 0
+
     from .dataset import build
 
     build(
@@ -185,7 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--limit", type=int, default=10)
     s.set_defaults(func=cmd_search)
 
-    b = sub.add_parser("build-data", help="download IMDb dumps and build the dataset (all films up to today)")
+    b = sub.add_parser("build-data", help="build the film dataset (all films up to today)")
+    b.add_argument("--source", choices=["imdb", "wikidata"], default="imdb",
+                   help="imdb: fast, ratings included, personal use only. "
+                        "wikidata: CC0, OK for public websites, ~1h build (default: imdb)")
     b.add_argument("--out", default=DEFAULT_DATA)
     b.add_argument("--raw-dir", default="data/raw", help="where the IMDb .tsv.gz dumps are stored")
     b.add_argument("--min-votes", type=int, default=50, help="skip films with fewer IMDb votes (default: 50)")

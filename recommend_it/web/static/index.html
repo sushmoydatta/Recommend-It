@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recommend-It</title>
+  <meta name="description" content="Find films like the ones you love, and where to watch them, free and legal options first.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">🎬 Recommend-It</a>
+    <label class="region">
+      <span>Watching from</span>
+      <select id="region" aria-label="Your country"></select>
+    </label>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <h1>Find films like the ones you love.</h1>
+      <p class="sub">Over 300,000 films from 1890s silents to this year's releases. See where each one streams, with <strong>free and legal</strong> options first.</p>
+      <form class="search" id="search-form" role="search" autocomplete="off">
+        <input id="q" type="search" placeholder="Type a movie you like, e.g. Inception, 3 Idiots, Spirited Away" aria-label="Movie title"
+               role="combobox" aria-expanded="false" aria-controls="suggestions" aria-autocomplete="list">
+        <button type="submit">Recommend</button>
+        <ul id="suggestions" role="listbox" hidden></ul>
+      </form>
+      <div class="examples" id="examples"></div>
+    </section>
+
+    <section id="result" hidden>
+      <div class="matched" id="matched"></div>
+      <div class="toolbar">
+        <h2>You might also enjoy</h2>
+        <label class="toggle"><input type="checkbox" id="free-only"> <span>Free to watch only</span></label>
+      </div>
+      <p class="status" id="status" role="status"></p>
+      <div class="grid" id="grid"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p><strong>Only legal sources.</strong> Recommend-It links to licensed services and public-domain films. It never links to pirate sites.</p>
+    <p>Film data: <a href="https://www.wikidata.org" rel="noopener">Wikidata</a> (CC0).
+      Streaming availability: <a href="https://www.justwatch.com" rel="noopener">JustWatch</a> via
+      <a href="https://www.themoviedb.org" rel="noopener">TMDB</a>. This product uses the TMDB API but is not endorsed or certified by TMDB.
+      Public-domain films: <a href="https://archive.org/details/feature_films" rel="noopener">Internet Archive</a>.</p>
+    <p><a href="https://github.com/sushmoydatta/Recommend-It" rel="noopener">Source code</a> · <a href="/api/docs">API</a></p>
+  </footer>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -5,4 +5,4 @@ __pycache__/
 # Generated data: build it with `python cli.py build-data`
 data/raw/
 data/.cache/
-data/movies.csv.gz
+data/*.csv.gz

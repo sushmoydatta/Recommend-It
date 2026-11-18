@@ -1,3 +1,14 @@
+---
+title: Recommend-It
+emoji: 🎬
+colorFrom: yellow
+colorTo: red
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Find films like the ones you love, and where to watch them free.
+---
+
 # Recommend-It
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sushmoydatta/Recommend-It/blob/main/Movie_Recommender.ipynb)
@@ -16,6 +27,44 @@ Because you liked Inception (2010), you might enjoy:
   ...
 ```
 *(Illustrative output. Availability changes over time and differs by country.)*
+
+## Website
+
+A public web app ships in `recommend_it/web`: search-as-you-type, recommendations, posters, and a **"Free to watch only"** filter that lists legal free and ad-supported options for your country.
+
+```bash
+pip install -r requirements-web.txt
+python cli.py build-data --source wikidata --out data/movies-wikidata.csv.gz   # ~1h, CC0 data
+RECOMMEND_IT_DATA=data/movies-wikidata.csv.gz uvicorn recommend_it.web.app:app --port 8000
+```
+
+### Why the website uses Wikidata
+
+IMDb's datasets are licensed for personal, non-commercial use only, so they can't power a public site. The website uses **Wikidata (CC0)**: over 300k films with genres, directors, cast and subjects. Popularity comes from how many Wikipedia language editions have an article on the film. A GitHub Action (`.github/workflows/dataset.yml`) rebuilds it weekly and publishes it as the `dataset` release asset, which the website downloads.
+
+### Deploy to Hugging Face Spaces (free, recommended)
+
+The app needs about 0.5–1 GB of RAM, more than most free tiers (Render's free tier has 512 MB). Hugging Face's free CPU Spaces have 16 GB.
+
+1. Publish the dataset once: **Actions → dataset → Run workflow** (takes about an hour). This creates the `dataset` release.
+2. Create a Space at huggingface.co/new-space with **SDK: Docker**, blank template.
+3. Push this repository to it:
+   ```bash
+   git remote add space https://huggingface.co/spaces/<your-user>/recommend-it
+   git push space main
+   ```
+4. Optional: in the Space's **Settings → Variables and secrets**, add the secret `TMDB_READ_TOKEN` (your TMDB "API Read Access Token") to get posters and per-service availability.
+
+The `Dockerfile` also works on Render, Fly.io, Railway or Google Cloud Run. Set the `PORT` env var and give it at least 1 GB of RAM.
+
+### Web configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RECOMMEND_IT_DATA` | `data/movies.csv.gz` | Dataset path |
+| `RECOMMEND_IT_DATA_URL` | the GitHub `dataset` release | Downloaded at startup or build time if the file is missing |
+| `TMDB_READ_TOKEN` / `TMDB_API_KEY` | none | Posters, plots, exact streaming availability |
+| `RATE_LIMIT_PER_MIN` | `90` | API requests per minute per IP |
 
 ## Quick start
 
@@ -87,11 +136,15 @@ recommend_it/
 ├── engine.py     # recommender: features, TF-IDF, ranking, title search
 ├── dataset.py    # IMDb download + build, optional TMDB enrichment
 ├── watch.py      # legal where-to-watch lookup (TMDB/JustWatch, Internet Archive)
+├── wikidata.py   # CC0 dataset builder for the public website
+├── web/          # FastAPI app + static frontend (index.html, app.js, style.css)
 ├── tmdb.py       # minimal TMDB client
 ├── http.py       # stdlib HTTP helpers
 └── cli.py        # command-line interface
 cli.py            # `python cli.py ...` entry point
 tests/            # pytest suite (no network needed)
+Dockerfile        # website image (Hugging Face Spaces, Render, Fly.io...)
+.github/workflows # tests + weekly dataset rebuild
 Movie_Recommender.ipynb   # original exploration notebook
 ```
 

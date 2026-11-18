@@ -113,7 +113,7 @@ def _doc_year(doc: dict, title_year: int | None) -> int | None:
     return None
 
 
-def archive_offers(title: str, year: int | None, timeout: float = 10) -> list[Offer]:
+def archive_offers(title: str, year: int | None, timeout: float = 6) -> list[Offer]:
     """Public-domain copies in the Internet Archive's curated Feature Films collection.
 
     The archive's title search is fuzzy ("The Kid" also hits "Billy the Kid"), so
@@ -135,7 +135,7 @@ def archive_offers(title: str, year: int | None, timeout: float = 10) -> list[Of
         y = _doc_year(doc, title_year)
         if year and (y is None or abs(y - year) > 1):
             continue
-        return [Offer("Internet Archive (public domain)", "free", f"https://archive.org/details/{doc['identifier']}")]
+        return [Offer("Internet Archive (public domain in the US)", "free", f"https://archive.org/details/{doc['identifier']}")]
     return []
 
 

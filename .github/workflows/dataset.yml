@@ -1,0 +1,38 @@
+# Rebuilds the public (Wikidata, CC0) film dataset every week and publishes it as
+# the "dataset" release asset that the website downloads.
+name: dataset
+on:
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build dataset from Wikidata
+        run: python cli.py build-data --source wikidata --out data/movies-wikidata.csv.gz
+      - name: Sanity check
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          df = pd.read_csv("data/movies-wikidata.csv.gz")
+          assert len(df) > 200_000, len(df)
+          print(len(df), "films", int(df.year.min()), "-", int(df.year.max()))
+          PY
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view dataset >/dev/null 2>&1 || \
+            gh release create dataset --title "Film dataset (Wikidata, CC0)" \
+              --notes "Weekly rebuilt film dataset from Wikidata (CC0). Used by the website."
+          gh release upload dataset data/movies-wikidata.csv.gz --clobber

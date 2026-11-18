@@ -26,8 +26,18 @@ from scipy import sparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 
-FEATURE_VERSION = "2"
-TOKEN_FIELDS = {"genres": ("g", 3), "director": ("p", 2), "cast": ("p", 1)}
+FEATURE_VERSION = "3"
+TOKEN_FIELDS = {
+    "genres": ("g", 3),
+    "director": ("p", 2),
+    "cast": ("p", 1),
+    # Wikidata datasets identify people/subjects by ID (unambiguous, no name clashes).
+    "director_ids": ("p", 2),
+    "cast_ids": ("p", 1),
+    "subject_ids": ("s", 2),
+}
+# If an ID column exists, the name column is display-only (avoid double counting).
+SUPERSEDED_BY = {"director": "director_ids", "cast": "cast_ids"}
 TEXT_FIELDS = {"keywords": 2, "overview": 1, "tagline": 1}
 # Columns of the classic Kaggle "TMDB 5000" CSV, mapped to ours.
 ALIASES = {"vote_average": "rating", "vote_count": "votes", "id": "tmdb_id"}
@@ -61,6 +71,10 @@ class Movie:
     director: str = ""
     rating: float | None = None
     votes: int | None = None
+    popularity: int | None = None
+    qid: str | None = None
+    runtime: int | None = None
+    id: str | None = None
     imdb_id: str | None = None
     tmdb_id: int | None = None
 
@@ -81,6 +95,7 @@ class MovieRecommender:
             )
         self.quality_weight = quality_weight
         self.movies = self._load(self.path)
+        self._source_columns = set(pd.read_csv(self.path, nrows=0).columns)
         self._norm_titles = self.movies["title"].map(normalize)
         self._X = self._vectors(use_cache)
         self._quality = self._quality_scores()
@@ -106,6 +121,8 @@ class MovieRecommender:
     def _documents(self) -> list[str]:
         cols = {}
         for col, (prefix, weight) in TOKEN_FIELDS.items():
+            if SUPERSEDED_BY.get(col) in self._source_columns:
+                continue
             # The old TMDB-5000 CSV separates genres and cast with plain spaces, so
             # names can't be recovered there; fall back to single words. A director
             # field without separators is always one name.
@@ -134,9 +151,20 @@ class MovieRecommender:
                 pass
         return X
 
+    def _popularity(self) -> pd.Series | None:
+        for col in ("votes", "popularity"):
+            if col in self.movies.columns:
+                return pd.to_numeric(self.movies[col], errors="coerce").fillna(0)
+        return None
+
     def _quality_scores(self) -> np.ndarray | None:
         if not {"rating", "votes"} <= set(self.movies.columns):
-            return None
+            pop = self._popularity()
+            if pop is None:
+                return None
+            # No ratings (e.g. Wikidata): use how widely known a film is, on a log scale.
+            q = np.log1p(pop) / max(np.log1p(pop.max()), 1e-9)
+            return q.clip(0, 1).to_numpy(dtype=np.float32)
         R = pd.to_numeric(self.movies["rating"], errors="coerce")
         v = pd.to_numeric(self.movies["votes"], errors="coerce").fillna(0)
         C = R.mean()
@@ -160,16 +188,43 @@ class MovieRecommender:
             director=str(r.get("director", "")).replace("|", ", "),
             rating=val("rating", float),
             votes=val("votes", int),
+            popularity=val("popularity", int),
+            qid=val("qid", str),
+            runtime=val("runtime", int),
+            id=self.key_of(pos),
             imdb_id=val("imdb_id", str),
             tmdb_id=val("tmdb_id", int),
         )
 
     def _by_popularity(self, positions) -> list[int]:
         positions = list(positions)
-        if "votes" in self.movies.columns:
-            votes = pd.to_numeric(self.movies["votes"].iloc[positions], errors="coerce").fillna(0)
-            return list(votes.sort_values(ascending=False, kind="stable").index)
+        pop = self._popularity()
+        if pop is not None:
+            return list(pop.iloc[positions].sort_values(ascending=False, kind="stable").index)
         return positions
+
+    @property
+    def size(self) -> int:
+        return len(self.movies)
+
+    def key_of(self, pos: int) -> str:
+        """Stable public id for a film: Wikidata QID, else IMDb id, else row number."""
+        r = self.movies.iloc[pos]
+        for col in ("qid", "imdb_id"):
+            v = r.get(col)
+            if v is not None and not pd.isna(v) and str(v):
+                return str(v)
+        return f"row{pos}"
+
+    def position_of(self, key: str) -> int:
+        if not hasattr(self, "_key_index"):
+            self._key_index = {self.key_of(i): i for i in range(len(self.movies))}
+        if key not in self._key_index:
+            raise KeyError(key)
+        return self._key_index[key]
+
+    def movie(self, pos: int) -> Movie:
+        return self._movie(pos)
 
     def search(self, query: str, limit: int = 10) -> list[Movie]:
         """Find films whose title matches ``query`` (optionally "Title (Year)")."""
@@ -196,10 +251,24 @@ class MovieRecommender:
         if len(words):
             return self._by_popularity(words)
 
-        close = difflib.get_close_matches(q, titles.drop_duplicates().tolist(), n=5, cutoff=0.6)
+        # Typo-tolerant fallback. Only compare against titles with the same first
+        # letter and a similar length, which keeps this fast on 300k+ titles.
+        pool = titles[(titles.str[:1] == q[:1]) & (titles.str.len().sub(len(q)).abs() <= max(3, len(q) // 3))]
+        close = difflib.get_close_matches(q, pool.drop_duplicates().tolist(), n=5, cutoff=0.6)
         hits = titles.index[titles.isin(close) & year_ok]
         order = {t: i for i, t in enumerate(close)}
         return sorted(self._by_popularity(hits), key=lambda p: order[titles.iat[p]])
+
+    def suggest(self, prefix: str, limit: int = 8) -> list[Movie]:
+        """Search-as-you-type: titles with a word starting with ``prefix``, most popular first."""
+        q = normalize(prefix)
+        if len(q) < 2:
+            return []
+        hits = self._norm_titles.index[self._norm_titles.str.contains(rf"\b{re.escape(q)}", regex=True)]
+        starts = [p for p in hits if self._norm_titles.iat[p].startswith(q)]
+        rest = [p for p in hits if not self._norm_titles.iat[p].startswith(q)]
+        ranked = (self._by_popularity(starts) + self._by_popularity(rest))[:limit]
+        return [self._movie(p) for p in ranked]
 
     def resolve(self, query: str) -> tuple[Movie, list[Movie]]:
         """Return the best match for ``query`` plus up to 4 alternatives."""
@@ -211,12 +280,14 @@ class MovieRecommender:
     # ------------------------------------------------------------------ recommend
     def recommend(self, query: str, top_n: int = 10) -> tuple[Movie, list[Movie]]:
         """Return (matched movie, top_n most similar movies)."""
-        if top_n < 1:
-            raise ValueError("top_n must be at least 1.")
         positions = self._search_positions(query)
         if not positions:
             raise ValueError(f"No movie found matching '{query}'. Try `search` to browse titles.")
-        pos = positions[0]
+        return self.recommend_position(positions[0], top_n)
+
+    def recommend_position(self, pos: int, top_n: int = 10) -> tuple[Movie, list[Movie]]:
+        if top_n < 1:
+            raise ValueError("top_n must be at least 1.")
 
         sims = linear_kernel(self._X[pos], self._X).ravel()
         ranked = sims.copy()
